@@ -1,66 +1,196 @@
--- lua/plugins/coding/mason.lua - LSP/DAP/Linter installer
+-- lua/plugins/coding/lsp.lua - LSP configuration
 
 return {
-  "williamboman/mason.nvim",
-  cmd = "Mason",
-  keys = { { "<leader>cm", "<cmd>Mason<cr>", desc = "Mason" } },
-  build = ":MasonUpdate",
-  opts = {
-    ensure_installed = {
-      -- LSP servers
-      "lua-language-server",
-      "pyright",
-      "typescript-language-server",
-      "html-lsp",
-      "css-lsp",
-      "json-lsp",
-      "yaml-language-server",
-      "clangd",
-      "bash-language-server",
-      
-      -- Formatters
-      "stylua",
-      "black",
-      "prettier",
-      "clang-format",
-      
-      -- Linters
-      "eslint_d",
-      "pylint",
-    },
-    ui = {
-      icons = {
-        package_installed = "✓",
-        package_pending = "➜",
-        package_uninstalled = "✗",
-      },
-      border = "rounded",
-    },
+  "neovim/nvim-lspconfig",
+  event = { "BufReadPre", "BufNewFile" },
+  dependencies = {
+    "williamboman/mason.nvim",
+    "williamboman/mason-lspconfig.nvim",
+    "hrsh7th/cmp-nvim-lsp",
+    "folke/neodev.nvim",
   },
-  config = function(_, opts)
-    require("mason").setup(opts)
-    local mr = require("mason-registry")
-    mr:on("package:install:success", function()
-      vim.defer_fn(function()
-        -- trigger FileType event to possibly load this newly installed LSP server
-        require("lazy.core.handler.event").trigger({
-          event = "FileType",
-          buf = vim.api.nvim_get_current_buf(),
-        })
-      end, 100)
-    end)
-    local function ensure_installed()
-      for _, tool in ipairs(opts.ensure_installed) do
-        local p = mr.get_package(tool)
-        if not p:is_installed() then
-          p:install()
-        end
-      end
+  config = function()
+    -- Setup neodev before lspconfig
+    require("neodev").setup({})
+
+    -- Import lspconfig plugin
+    local lspconfig = require("lspconfig")
+    local cmp_nvim_lsp = require("cmp_nvim_lsp")
+    local mason_lspconfig = require("mason-lspconfig")
+
+    local keymap = vim.keymap -- for conciseness
+
+    vim.api.nvim_create_autocmd("LspAttach", {
+      group = vim.api.nvim_create_augroup("UserLspConfig", {}),
+      callback = function(ev)
+        -- Buffer local mappings.
+        local opts = { buffer = ev.buf, silent = true }
+
+        -- set keybinds
+        opts.desc = "Show LSP references"
+        keymap.set("n", "gR", function()
+          if pcall(require, "telescope") then
+            vim.cmd("Telescope lsp_references")
+          else
+            vim.lsp.buf.references()
+          end
+        end, opts)
+
+        opts.desc = "Go to declaration"
+        keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
+
+        opts.desc = "Show LSP definitions"
+        keymap.set("n", "gd", function()
+          if pcall(require, "telescope") then
+            vim.cmd("Telescope lsp_definitions")
+          else
+            vim.lsp.buf.definition()
+          end
+        end, opts)
+
+        opts.desc = "Show LSP implementations"
+        keymap.set("n", "gi", function()
+          if pcall(require, "telescope") then
+            vim.cmd("Telescope lsp_implementations")
+          else
+            vim.lsp.buf.implementation()
+          end
+        end, opts)
+
+        opts.desc = "Show LSP type definitions"
+        keymap.set("n", "gt", function()
+          if pcall(require, "telescope") then
+            vim.cmd("Telescope lsp_type_definitions")
+          else
+            vim.lsp.buf.type_definition()
+          end
+        end, opts)
+
+        opts.desc = "See available code actions"
+        keymap.set({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, opts)
+
+        opts.desc = "Smart rename"
+        keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
+
+        opts.desc = "Show buffer diagnostics"
+        keymap.set("n", "<leader>D", function()
+          if pcall(require, "telescope") then
+            vim.cmd("Telescope diagnostics bufnr=0")
+          else
+            vim.diagnostic.setloclist()
+          end
+        end, opts)
+
+        opts.desc = "Show line diagnostics"
+        keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
+
+        opts.desc = "Go to previous diagnostic"
+        keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
+
+        opts.desc = "Go to next diagnostic"
+        keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
+
+        opts.desc = "Show documentation for what is under cursor"
+        keymap.set("n", "K", vim.lsp.buf.hover, opts)
+
+        opts.desc = "Restart LSP"
+        keymap.set("n", "<leader>rs", ":LspRestart<CR>", opts)
+
+        opts.desc = "Format file"
+        keymap.set("n", "<leader>f", function()
+          vim.lsp.buf.format({ async = true })
+        end, opts)
+      end,
+    })
+
+    -- used to enable autocompletion (assign to every lsp server config)
+    local capabilities = cmp_nvim_lsp.default_capabilities()
+
+    -- Configure diagnostic signs using the modern method
+    vim.diagnostic.config({
+      signs = {
+        text = {
+          [vim.diagnostic.severity.ERROR] = " ",
+          [vim.diagnostic.severity.WARN] = " ",
+          [vim.diagnostic.severity.HINT] = "󰠠 ",
+          [vim.diagnostic.severity.INFO] = " ",
+        }
+      },
+    })
+
+    -- Setup mason-lspconfig (this bridges mason and lspconfig)
+    mason_lspconfig.setup({
+      -- Map mason package names to lspconfig server names
+      ensure_installed = {
+        "lua_ls",        -- lua-language-server
+        "pyright",       -- pyright  
+        "ts_ls",         -- typescript-language-server
+        "html",          -- html-lsp
+        "cssls",         -- css-lsp
+        "jsonls",        -- json-lsp
+        "yamlls",        -- yaml-language-server
+        "clangd",        -- clangd
+        "bashls",        -- bash-language-server
+      },
+      automatic_installation = true,
+    })
+
+    -- Configure each server with custom settings
+    local server_configs = {
+      lua_ls = {
+        settings = {
+          Lua = {
+            diagnostics = {
+              globals = { "vim" },
+            },
+            completion = {
+              callSnippet = "Replace",
+            },
+            workspace = {
+              library = {
+                [vim.fn.expand("$VIMRUNTIME/lua")] = true,
+                [vim.fn.stdpath("config") .. "/lua"] = true,
+              },
+            },
+          },
+        },
+      },
+      pyright = {
+        settings = {
+          python = {
+            analysis = {
+              typeCheckingMode = "basic",
+            },
+          },
+        },
+      },
+      ts_ls = {
+        init_options = {
+          preferences = {
+            disableSuggestions = true,
+          },
+        },
+      },
+      clangd = {
+        cmd = {
+          "clangd",
+          "--offset-encoding=utf-16",
+        },
+      },
+    }
+
+    -- Setup each server
+    for server, config in pairs(server_configs) do
+      config.capabilities = capabilities
+      lspconfig[server].setup(config)
     end
-    if mr.refresh then
-      mr.refresh(ensure_installed)
-    else
-      ensure_installed()
+
+    -- Setup remaining servers with default config
+    local default_servers = { "html", "cssls", "jsonls", "yamlls", "bashls" }
+    for _, server in ipairs(default_servers) do
+      lspconfig[server].setup({
+        capabilities = capabilities,
+      })
     end
   end,
 }
