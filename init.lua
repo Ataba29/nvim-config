@@ -49,7 +49,7 @@ local function setup_options()
 
   -- Windows-specific settings
   if vim.fn.has("win32") == 1 then
-    vim.opt.shell = "powershell"
+    vim.opt.shell = "pwsh"
     vim.opt.shellcmdflag = "-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command"
     vim.opt.shellquote = ""
     vim.opt.shellxquote = ""
@@ -457,8 +457,8 @@ local plugins = {
           border = "curved",
           winblend = 0,
         },
-        -- Only force cmd.exe on Windows; otherwise use the user's $SHELL
-        shell = vim.fn.has("win32") == 1 and "cmd.exe" or nil,
+        -- Only force pwsh on Windows; otherwise use the user's $SHELL
+        shell = vim.fn.has("win32") == 1 and "pwsh" or nil,
         dir = "cwd",
         on_create = function(term)
           vim.api.nvim_buf_set_keymap(term.bufnr, "t", "<C-n>", "<cmd>ToggleTerm<CR>", { noremap = true, silent = true })
