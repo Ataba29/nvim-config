@@ -449,7 +449,6 @@ local plugins = {
     config = function()
       require("toggleterm").setup({
         size = 15,                -- Height percentage when horizontal
-        open_mapping = [[<leader>ts]],
         direction = "horizontal", -- Opens at bottom
         start_in_insert = true,
         close_on_exit = true,
