@@ -1,7 +1,7 @@
 -- init.lua - Neovim Configuration
 -- Bootstrap lazy.nvim
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not (vim.uv or vim.loop).fs_stat(lazypath) then
   vim.fn.system({
     "git",
     "clone",
@@ -167,6 +167,7 @@ local plugins = {
           "jsonls",
           "yamlls",
           "clangd",
+          "cmake", -- cmake-language-server, since you use CMake heavily
         },
         automatic_installation = true,
       })
@@ -181,7 +182,6 @@ local plugins = {
       "hrsh7th/cmp-nvim-lsp",
     },
     config = function()
-      local lspconfig = require("lspconfig")
       local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
       -- Configure LSP servers
@@ -205,11 +205,13 @@ local plugins = {
         jsonls = {},
         yamlls = {},
         clangd = {},
+        cmake = {},
       }
 
       for server, config in pairs(servers) do
         config.capabilities = capabilities
-        lspconfig[server].setup(config)
+        vim.lsp.config(server, config)
+        vim.lsp.enable(server)
       end
 
       -- LSP keymaps
@@ -225,9 +227,68 @@ local plugins = {
           vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
           vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
           vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
-          vim.keymap.set("n", "<leader>f", function()
-            vim.lsp.buf.format({ async = true })
-          end, opts)
+        end,
+      })
+    end,
+  },
+
+  -- Formatting (auto-format on save via LSP + standalone formatters)
+  {
+    "stevearc/conform.nvim",
+    event = { "BufWritePre" },
+    cmd = { "ConformInfo" },
+    keys = {
+      {
+        "<leader>f",
+        function()
+          require("conform").format({ async = true, lsp_fallback = true })
+        end,
+        mode = "",
+        desc = "[F]ormat buffer",
+      },
+    },
+    config = function()
+      require("conform").setup({
+        notify_on_error = false,
+        format_on_save = {
+          timeout_ms = 500,
+          lsp_fallback = true,
+        },
+        formatters_by_ft = {
+          lua = { "stylua" },
+          python = { "isort", "black" },
+          javascript = { "prettier" },
+          typescript = { "prettier" },
+          html = { "prettier" },
+          css = { "prettier" },
+          json = { "prettier" },
+          yaml = { "prettier" },
+          markdown = { "prettier" },
+          c = { "clang-format" },
+          cpp = { "clang-format" },
+          cmake = { "cmake_format" },
+        },
+      })
+    end,
+  },
+
+  -- Linting (extra diagnostics beyond LSP)
+  {
+    "mfussenegger/nvim-lint",
+    event = { "BufReadPre", "BufNewFile" },
+    config = function()
+      local lint = require("lint")
+      lint.linters_by_ft = {
+        python = { "ruff" },
+        javascript = { "eslint_d" },
+        typescript = { "eslint_d" },
+        cpp = { "cpplint" },
+        c = { "cpplint" },
+      }
+
+      vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "InsertLeave" }, {
+        callback = function()
+          lint.try_lint()
         end,
       })
     end,
@@ -243,7 +304,7 @@ local plugins = {
           "lua", "vim", "vimdoc", "query",
           "python", "javascript", "typescript",
           "html", "css", "json", "yaml",
-          "markdown", "bash", "c", "cpp"
+          "markdown", "bash", "c", "cpp", "cmake"
         },
         sync_install = false,
         auto_install = true,
@@ -332,6 +393,12 @@ local plugins = {
     end,
   },
 
+  -- Git diff viewer, pairs well with lazygit
+  {
+    "sindrets/diffview.nvim",
+    cmd = { "DiffviewOpen", "DiffviewClose", "DiffviewFileHistory" },
+  },
+
   -- Auto pairs
   {
     "windwp/nvim-autopairs",
@@ -349,6 +416,16 @@ local plugins = {
     "numToStr/Comment.nvim",
     config = function()
       require("Comment").setup()
+    end,
+  },
+
+  -- Highlight and search TODO/FIXME/NOTE comments
+  {
+    "folke/todo-comments.nvim",
+    dependencies = { "nvim-lua/plenary.nvim" },
+    event = { "BufReadPost", "BufNewFile" },
+    config = function()
+      require("todo-comments").setup()
     end,
   },
 
@@ -381,8 +458,8 @@ local plugins = {
           border = "curved",
           winblend = 0,
         },
-        -- For multiple terminals
-        shell = "cmd.exe",
+        -- Only force cmd.exe on Windows; otherwise use the user's $SHELL
+        shell = vim.fn.has("win32") == 1 and "cmd.exe" or nil,
         dir = "cwd",
         on_create = function(term)
           vim.api.nvim_buf_set_keymap(term.bufnr, "t", "<C-n>", "<cmd>ToggleTerm<CR>", { noremap = true, silent = true })
@@ -413,38 +490,19 @@ local plugins = {
     end
   },
 
-  -- Easy jumping to words
+  -- Fast, precise jumping to any visible location (actively maintained,
+  -- replaces hop.nvim which the author has archived)
   {
-    "phaazon/hop.nvim",
-    branch = "v2",
-    config = function()
-      require("hop").setup({ keys = "etovxqpdygfblzhckisuran" })
-
-      -- Keymaps
-      vim.keymap.set("", "f", function()
-        require("hop").hint_char1({ direction = require("hop.hint").HintDirection.AFTER_CURSOR, current_line_only = true })
-      end, { remap = true })
-
-      vim.keymap.set("", "F", function()
-        require("hop").hint_char1({ direction = require("hop.hint").HintDirection.BEFORE_CURSOR, current_line_only = true })
-      end, { remap = true })
-
-      vim.keymap.set("", "t", function()
-        require("hop").hint_char1({ direction = require("hop.hint").HintDirection.AFTER_CURSOR, current_line_only = true, hint_offset = -1 })
-      end, { remap = true })
-
-      vim.keymap.set("", "T", function()
-        require("hop").hint_char1({ direction = require("hop.hint").HintDirection.BEFORE_CURSOR, current_line_only = true, hint_offset = 1 })
-      end, { remap = true })
-
-      vim.keymap.set("", "<leader>j", function()
-        require("hop").hint_words()
-      end, { remap = true })
-
-      vim.keymap.set("", "<leader>k", function()
-        require("hop").hint_lines()
-      end, { remap = true })
-    end,
+    "folke/flash.nvim",
+    event = "VeryLazy",
+    opts = {},
+    keys = {
+      { "s", mode = { "n", "x", "o" }, function() require("flash").jump() end, desc = "Flash" },
+      { "S", mode = { "n", "x", "o" }, function() require("flash").treesitter() end, desc = "Flash Treesitter" },
+      { "r", mode = "o", function() require("flash").remote() end, desc = "Remote Flash" },
+      { "R", mode = { "o", "x" }, function() require("flash").treesitter_search() end, desc = "Treesitter Search" },
+      { "<c-s>", mode = { "c" }, function() require("flash").toggle() end, desc = "Toggle Flash Search" },
+    },
   },
 
   -- Indent guides
@@ -586,6 +644,7 @@ local function setup_keymaps()
   vim.keymap.set("n", "<leader>sr", builtin.resume, { desc = "[S]earch [R]esume" })
   vim.keymap.set("n", "<leader>s.", builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
   vim.keymap.set("n", "<leader><leader>", builtin.buffers, { desc = "[ ] Find existing buffers" })
+  vim.keymap.set("n", "<leader>st", "<cmd>TodoTelescope<CR>", { desc = "[S]earch [T]odos" })
 
   -- Better window navigation
   vim.keymap.set("n", "<C-h>", "<C-w>h")
@@ -612,17 +671,16 @@ local function setup_keymaps()
   vim.keymap.set("n", "<leader>tg", "<cmd>lua _LAZYGIT_TOGGLE()<CR>", { desc = "[T]oggle [G]it" })
   vim.keymap.set("n", "<leader>tp", "<cmd>lua _PYTHON_TOGGLE()<CR>", { desc = "[T]oggle [P]ython" })
 
+  -- Diffview
+  vim.keymap.set("n", "<leader>gd", "<cmd>DiffviewOpen<CR>", { desc = "[G]it [D]iff view" })
+  vim.keymap.set("n", "<leader>gh", "<cmd>DiffviewFileHistory %<CR>", { desc = "[G]it file [H]istory" })
+  vim.keymap.set("n", "<leader>gc", "<cmd>DiffviewClose<CR>", { desc = "[G]it diff [C]lose" })
+
   -- Terminal mode navigation
   vim.keymap.set("t", "<C-h>", "<cmd>wincmd h<CR>", { desc = "Go left" })
   vim.keymap.set("t", "<C-j>", "<cmd>wincmd j<CR>", { desc = "Go down" })
   vim.keymap.set("t", "<C-k>", "<cmd>wincmd k<CR>", { desc = "Go up" })
   vim.keymap.set("t", "<C-l>", "<cmd>wincmd l<CR>", { desc = "Go right" })
-
-  -- Hop.nvim mappings (jump to words)
-  vim.keymap.set("n", "<leader>hw", "<cmd>HopWord<CR>", { desc = "[H]op to [W]ord" })
-  vim.keymap.set("n", "<leader>hl", "<cmd>HopLine<CR>", { desc = "[H]op to [L]ine" })
-  vim.keymap.set("n", "<leader>hc", "<cmd>HopChar1<CR>", { desc = "[H]op to [C]haracter" })
-  vim.keymap.set("n", "<leader>hp", "<cmd>HopPattern<CR>", { desc = "[H]op to [P]attern" })
 
   -- Stay in indent mode
   vim.keymap.set("v", "<", "<gv")
@@ -651,10 +709,16 @@ local function setup_autocmds()
     end,
   })
 
-  -- Remove trailing whitespace on save
+  -- Remove trailing whitespace on save (skip diffs/markdown where it can matter)
   vim.api.nvim_create_autocmd("BufWritePre", {
     pattern = "*",
-    command = [[%s/\s\+$//e]],
+    callback = function()
+      if vim.bo.filetype ~= "markdown" and vim.bo.filetype ~= "diff" then
+        local view = vim.fn.winsaveview()
+        vim.cmd([[keeppatterns %s/\s\+$//e]])
+        vim.fn.winrestview(view)
+      end
+    end,
   })
 
   -- Auto-resize splits when Vim gets resized
