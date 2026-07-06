@@ -94,6 +94,17 @@ local plugins = {
       require("nvim-tree").setup({
         disable_netrw = true,
         hijack_netrw = true,
+        filesystem_watchers = {
+          enable = true,
+          ignore_dirs = {
+            "node_modules",
+            "build",
+            "dist",
+            "target",
+            ".git",
+          },
+          max_events = 2000,
+        },
         view = {
           width = 30,
           side = "left",
